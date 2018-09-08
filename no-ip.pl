@@ -8,8 +8,9 @@ no warnings 'experimental';
 
 use Config::Tiny;
 use Data::Dumper;
-use JSON::Tiny('decode_json');
+use JSON::Tiny('decode_json', 'encode_json');
 use LWP::Protocol::https;
+use List::Util;
 use REST::Client;
 
 my $CONFIG = Config::Tiny->read('no-ip.cfg')->{_};
@@ -17,12 +18,24 @@ $CONFIG->{domain} =~ /^(.*)\.(.*\..+)$/;
 $CONFIG->{zone} = $2;
 $CONFIG->{sub} = $1;
 my $API = REST::Client->new();
+$API->addHeader('X-Api-Key', $CONFIG->{key});
+$API->addHeader('Content-Type', 'application/json');
 
 my $record_ipv4 = get_record($CONFIG->{sub}, 'A');
 my $record_ipv6 = get_record($CONFIG->{sub}, 'AAAA');
 
-say Dumper $record_ipv4;
-say Dumper $record_ipv6;
+update_record($CONFIG->{sub}, 'A', '1.2.6.7');
+
+sub update_record($name, $type, $value) {
+	my $content = {
+	  'items' => [{
+	    'rrset_values' => [ $value ],
+	    'rrset_ttl'    => 300,
+	    'rrset_type'    => $type,
+	  }]
+	};
+	call('zones/' . get_uuid() . "/records/$name", 'PUT', $content);
+}
 
 # All queries that starts with get will get a cached value of the wanted attribute.
 sub get_uuid () {
@@ -30,17 +43,30 @@ sub get_uuid () {
 	return $uuid;
 }
 
-sub get_record ($name, $type) {
+sub get_record($name, $type) {
 	state %records;
 	return $records{"$name-$type"} //= call_record($name, $type);
 }
 
-# All queries that starts with call will do a real call to the web-service.
-sub call($query) {
-	$API->addHeader('X-Api-Key', $CONFIG->{key});
-	my $result =
-	  decode_json
-	  $API->GET("https://dns.api.gandi.net/api/v5/$query")->responseContent();
+# All queries that starts with call wil, $contentl do a real call to the web-service.
+sub call($query, $type = 'GET', $content = undef) {
+	no strict 'refs';
+	my $url_root = 'https://dns.api.gandi.net/api/v5';
+	my $result;
+	if ($type eq 'GET') {
+	  $result = decode_json
+	    $API->GET("$url_root/$query")->responseContent();
+	} elsif ($type eq 'POST') {
+	  $content = encode_json($content);
+	  $result = $API->POST("$url_root/$query", $content)->responseContent();
+	} elsif ($type eq 'DELETE') {
+	  $result = $API->DELETE("$url_root/$query")->responseContent();
+	} elsif ($type eq 'PUT') {
+		$content = encode_json($content);
+		$result = $API->PUT("$url_root/$query", $content)->responseContent();
+	} else {
+	  ...
+	}
 	return @{$result};
 }
 
