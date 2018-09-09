@@ -48,30 +48,20 @@ sub get_record($name, $type) {
 	return $records{"$name-$type"} //= call_record($name, $type);
 }
 
-# All queries that starts with call wil, $contentl do a real call to the web-service.
-sub call($query, $type = 'GET', $content = undef) {
-	no strict 'refs';
+# Exit point of all request that are done on the Gandi API.
+sub call($query, $type = 'GET', $content = {}) {
 	my $url_root = 'https://dns.api.gandi.net/api/v5';
-	my $result;
-	if ($type eq 'GET') {
-	  $result = decode_json
-	    $API->GET("$url_root/$query")->responseContent();
-	} elsif ($type eq 'POST') {
-	  $content = encode_json($content);
-	  $result = $API->POST("$url_root/$query", $content)->responseContent();
-	} elsif ($type eq 'DELETE') {
-	  $result = $API->DELETE("$url_root/$query")->responseContent();
-	} elsif ($type eq 'PUT') {
-		$content = encode_json($content);
-		$result = $API->PUT("$url_root/$query", $content)->responseContent();
-	} else {
-	  ...
+	$content = ($type eq 'GET') ? {} : encode_json($content);
+	my $result = $API->$type("$url_root/$query", $content);
+	if ($result->responseCode() !~ /^20/) {
+		die ('HTTP Error: ' . $result->responseCode() . "\n" . $result->responseContent());
 	}
-	return @{$result};
+	return decode_json $result->responseContent();
 }
 
+# All queries that starts with call will fetch the $content from a real call to the web-service.
 sub call_uuid {
-	my @zones = call('zones');
+	my @zones = @{call('zones')};
 	my $uuid;
 	for my $zone (@zones) {
 		next unless $zone->{name} eq $CONFIG->{zone};
@@ -81,7 +71,7 @@ sub call_uuid {
 }
 
 sub call_record($name, $type) {
-	my @records = call('zones/' . get_uuid() . '/records');
+	my @records = @{call('zones/' . get_uuid() . '/records')};
 	for my $record (@records) {
 		next unless $record->{'rrset_name'} eq $name;
 		next unless $record->{'rrset_type'} eq $type;
