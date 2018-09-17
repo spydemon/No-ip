@@ -7,7 +7,6 @@ use warnings;
 no warnings 'experimental';
 
 use Config::Tiny;
-use Data::Dumper;
 use JSON::Tiny('decode_json', 'encode_json');
 use LWP::Protocol::https;
 use List::Util;
@@ -23,21 +22,23 @@ $API->addHeader('X-Api-Key', $CONFIG->{key});
 $API->addHeader('Content-Type', 'application/json');
 
 my ($current_ipv4, $current_ipv6) = get_current_ip();
-# my $record_ipv4 = get_record($CONFIG->{sub}, 'A');
-# my $record_ipv6 = get_record($CONFIG->{sub}, 'AAAA');
+my $recorded_ipv4 = get_record($CONFIG->{sub}, 'A');
+my $recorded_ipv6 = get_record($CONFIG->{sub}, 'AAAA');
 
-say "$current_ipv4 - $current_ipv6";
-# update_record($CONFIG->{sub}, 'A', '1.2.6.8');
+($current_ipv4 ne $recorded_ipv4)
+  ? update_record($CONFIG->{sub}, 'A', $current_ipv4)
+  : log_message('IPv4 did not change.');
+($current_ipv6 ne $recorded_ipv6)
+  ? update_record($CONFIG->{sub}, 'AAAA', $current_ipv6)
+  : log_message('IPv6 did not change.');
 
 sub update_record($name, $type, $value) {
+	log_message("Update $name ($type) with value: $value.");
 	my $content = {
-	  'items' => [{
-	    'rrset_values' => [ $value ],
-	    'rrset_ttl'    => 300,
-	    'rrset_type'    => $type,
-	  }]
+	  'rrset_values' => [ $value ],
+	  'rrset_ttl'    => 300,
 	};
-	call('zones/' . get_uuid() . "/records/$name", 'PUT', $content);
+	call('zones/' . get_uuid() . "/records/$name/$type", 'PUT', $content);
 }
 
 # We call an external website for fetching the current public IP address of our network.
@@ -97,4 +98,10 @@ sub call_record($name, $type) {
 		next unless $record->{'rrset_type'} eq $type;
 		return $record->{'rrset_values'}[0];
 	}
+}
+
+# Manage logging system.
+sub log_message($message) {
+	my $date = localtime;
+	printf("%s: %s\n", $date, $message);
 }
