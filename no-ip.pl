@@ -12,6 +12,7 @@ use JSON::Tiny('decode_json', 'encode_json');
 use LWP::Protocol::https;
 use List::Util;
 use REST::Client;
+use WWW::Curl::Easy;
 
 my $CONFIG = Config::Tiny->read('no-ip.cfg')->{_};
 $CONFIG->{domain} =~ /^(.*)\.(.*\..+)$/;
@@ -21,10 +22,12 @@ my $API = REST::Client->new();
 $API->addHeader('X-Api-Key', $CONFIG->{key});
 $API->addHeader('Content-Type', 'application/json');
 
-my $record_ipv4 = get_record($CONFIG->{sub}, 'A');
-my $record_ipv6 = get_record($CONFIG->{sub}, 'AAAA');
+my ($current_ipv4, $current_ipv6) = get_current_ip();
+# my $record_ipv4 = get_record($CONFIG->{sub}, 'A');
+# my $record_ipv6 = get_record($CONFIG->{sub}, 'AAAA');
 
-update_record($CONFIG->{sub}, 'A', '1.2.6.7');
+say "$current_ipv4 - $current_ipv6";
+# update_record($CONFIG->{sub}, 'A', '1.2.6.8');
 
 sub update_record($name, $type, $value) {
 	my $content = {
@@ -37,8 +40,25 @@ sub update_record($name, $type, $value) {
 	call('zones/' . get_uuid() . "/records/$name", 'PUT', $content);
 }
 
+# We call an external website for fetching the current public IP address of our network.
+# This subroutine will try to resolve the public IPv4 and IPv6.
+sub get_current_ip() {
+	my @results;
+	for my $current_test (CURL_IPRESOLVE_V4, CURL_IPRESOLVE_V6) {
+		my $result;
+		my $curl = WWW::Curl::Easy->new();
+		$curl->setopt(CURLOPT_IPRESOLVE, $current_test);
+		$curl->setopt(CURLOPT_URL, $CONFIG->{check});
+		$curl->setopt(CURLOPT_WRITEDATA, \$result);
+		die ($curl->errbuf) if $curl->perform;
+		chomp $result;
+		push @results, $result;
+	}
+	return @results;
+}
+
 # All queries that starts with get will get a cached value of the wanted attribute.
-sub get_uuid () {
+sub get_uuid() {
 	state $uuid = call_uuid();
 	return $uuid;
 }
@@ -75,6 +95,6 @@ sub call_record($name, $type) {
 	for my $record (@records) {
 		next unless $record->{'rrset_name'} eq $name;
 		next unless $record->{'rrset_type'} eq $type;
-		return $record;
+		return $record->{'rrset_values'}[0];
 	}
 }
