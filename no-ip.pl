@@ -10,6 +10,7 @@ use Config::Tiny;
 use JSON::Tiny('decode_json', 'encode_json');
 use LWP::Protocol::https;
 use List::Util;
+use Net::Address::IP::Local;
 use REST::Client;
 use WWW::Curl::Easy;
 
@@ -17,6 +18,10 @@ my $CONFIG = Config::Tiny->read('no-ip.cfg')->{_};
 $CONFIG->{domain} =~ /^(.*)\.(.*\..+)$/;
 $CONFIG->{zone} = $2;
 $CONFIG->{sub} = $1;
+
+# The execution of the script can be aborted depending of the current local ip.
+exit unless should_run();
+
 my $API = REST::Client->new();
 $API->addHeader('X-Api-Key', $CONFIG->{key});
 $API->addHeader('Content-Type', 'application/json');
@@ -104,4 +109,21 @@ sub call_record($name, $type) {
 sub log_message($message) {
 	my $date = localtime;
 	printf("%s: %s\n", $date, $message);
+}
+
+# We will check if the current local IPv4 respect the "only" regex set in the configuration file.
+# If the "only" setting is not set, we considerate that the current local IPv4 address match always the pattern.
+sub should_run() {
+	unless ($CONFIG->{only}) {
+		log_message('Setting "only" is not defined. This script will thus always update your domain IP.');
+		return 1;
+	}
+	my $local_ipv4 = Net::Address::IP::Local->public_ipv4();
+	my $pattern = $CONFIG->{only};
+	if ($local_ipv4 =~ $pattern) {
+		log_message("Current local IPv4 ($local_ipv4) match the \"only\" pattern ($pattern). The domain will be updated.");
+		return 1;
+	}
+	log_message("Current local IPv4 ($local_ipv4) doesn't match the \"only\" ($pattern). The script will be aborted.");
+	return 0;
 }
