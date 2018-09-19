@@ -110,8 +110,7 @@ sub call_record($name, $type) {
 
 # Manage logging system.
 sub log_message($message) {
-	my $date = localtime;
-	printf("%s: %s\n", $date, $message);
+	printf("%s\n", $message);
 }
 
 # We will check if the current local IPv4 respect the "only" regex set in the configuration file.
