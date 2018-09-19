@@ -6,6 +6,9 @@ use strict;
 use warnings;
 no warnings 'experimental';
 
+use FindBin;
+chdir $FindBin::Bin;
+
 use Config::Tiny;
 use JSON::Tiny('decode_json', 'encode_json');
 use LWP::Protocol::https;
