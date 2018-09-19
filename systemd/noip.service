@@ -1,0 +1,7 @@
+[Unit]
+Description=Manage DNS update of a Gandi domain with current public IPv4 and IPv6.
+
+[Service]
+Type=simple
+ExecStart=/opt/No-ip/no-ip.pl
+User=nobody
