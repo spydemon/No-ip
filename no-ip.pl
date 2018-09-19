@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-use v5.28;
+use v5.10;
 
 use feature 'signatures';
 use strict;
