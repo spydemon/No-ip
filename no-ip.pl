@@ -41,12 +41,17 @@ my $recorded_ipv6 = get_record($CONFIG->{sub}, 'AAAA');
   : log_message('IPv6 did not change.');
 
 sub update_record($name, $type, $value) {
-	log_message("Update $name ($type) with value: $value.");
 	my $content = {
 	  'rrset_values' => [ $value ],
 	  'rrset_ttl'    => 300,
 	};
-	call('zones/' . get_uuid() . "/records/$name/$type", 'PUT', $content);
+	if ($value eq '') {
+		log_message("Delete $name ($type) since network is unreachable.");
+		call('zones/' . get_uuid() . "/records/$name/$type", 'DELETE');
+	} else {
+		log_message("Update $name ($type) with value: $value.");
+		call('zones/' . get_uuid() . "/records/$name/$type", 'PUT', $content);
+	}
 }
 
 # We call an external website for fetching the current public IP address of our network.
@@ -54,14 +59,26 @@ sub update_record($name, $type, $value) {
 sub get_current_ip() {
 	my @results;
 	for my $current_test (CURL_IPRESOLVE_V4, CURL_IPRESOLVE_V6) {
+		my $test_label = ($current_test == CURL_IPRESOLVE_V4)
+		  ? 'IPv4'
+		  : 'IPv6';
+		log_message("Get $test_label endpoint.");
 		my $result;
 		my $curl = WWW::Curl::Easy->new();
 		$curl->setopt(CURLOPT_IPRESOLVE, $current_test);
 		$curl->setopt(CURLOPT_URL, $CONFIG->{check});
 		$curl->setopt(CURLOPT_WRITEDATA, \$result);
-		die ($curl->errbuf) if $curl->perform;
-		chomp $result;
-		push @results, $result;
+		# This error occurs mainly when the current network is not handling the tested
+		# kind of IP. Eg: trying to get the current IPv6 on a network that doesn't
+		# support them.
+		if ($curl->perform) {
+			log_message($curl->errbuf);
+			push @results, '';
+		} else {
+			log_message("Endpoint fetched: $result.");
+			chomp $result;
+			push @results, $result;
+		}
 	}
 	return @results;
 }
@@ -80,12 +97,12 @@ sub get_record($name, $type) {
 # Exit point of all request that are done on the Gandi API.
 sub call($query, $type = 'GET', $content = {}) {
 	my $url_root = 'https://dns.api.gandi.net/api/v5';
-	$content = ($type eq 'GET') ? {} : encode_json($content);
+	$content = ($type eq 'PUT') ? encode_json($content) : {};
 	my $result = $API->$type("$url_root/$query", $content);
 	if ($result->responseCode() !~ /^20/) {
 		die ('HTTP Error: ' . $result->responseCode() . "\n" . $result->responseContent());
 	}
-	return decode_json $result->responseContent();
+	return decode_json($result->responseContent() || '{}');
 }
 
 # All queries that starts with call will fetch the $content from a real call to the web-service.
